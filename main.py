@@ -1,5 +1,5 @@
 '''
-AnimationManager v1.0 release
+AnimationManager v1.1 release
 By fecwaqw
 '''
 import re
