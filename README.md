@@ -7,4 +7,4 @@
 2. 下载ffmpeg
 3. 使用pip安装lxml，requests，faker，tqdm
 
-觉得有意思的话点歌star吧
+觉得有意思的话点个star吧
