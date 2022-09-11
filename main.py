@@ -1,5 +1,5 @@
 '''
-AnimationManager v1.1 release
+AnimationManager v1.2 release
 By fecwaqw
 '''
 import re
@@ -36,7 +36,7 @@ help_content = '''
  add <番剧名称> (会帮你自动搜索,所以名称可以不用输入完整)
 获取新番:
  hot
-下载番剧(从yhdm123.com):
+下载番剧:
  get <番剧序号>
 列出番剧列表:
  list --- ls
@@ -45,9 +45,9 @@ help_content = '''
 删除番剧:
  remove / delete <番剧序号> --- rm / del <番剧序号>
 编辑番剧信息:
- edit <番剧序号> <name|url> <修改值>--- ed <番剧序号> <name|url> <修改值>
+ edit <番剧序号> <name|url> <修改值> --- ed <番剧序号> <name|url> <修改值>
 设置ffmpeg路径:
- ffmpegpath <路径> -- ffp <路径>
+ ffmpegpath <路径> --- ffp <路径>
 帮助:
  help --- ?
 退出:
@@ -156,7 +156,7 @@ def get_download_url(url):
     m3u8_data = requests.get(url, headers=header)
     m3u8_data = etree.HTML(m3u8_data.text)
     m3u8_data = m3u8_data.xpath(
-        '//div[@class="player-box-main"]/script/text()')[0]
+        '/div[@class="player-box-main"]/script/text()')[0]
     m3u8_from = json_match(m3u8_data, 'from')
     m3u8_id = json_match(m3u8_data, 'id')
     m3u8_url = json_match(m3u8_data, 'url')
