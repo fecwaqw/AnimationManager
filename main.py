@@ -83,11 +83,11 @@ def download(url, path, filename):
     except:
         pass
     pbar = tqdm(total=len(url_list))
-    for i in url_list:
-        ts_filename = i.split('/')[-1]
+    for i in range(len(url_list)):
+        ts_filename = str(i + 1)
         if not os.path.exists(f'temp/{ts_filename}'):
             while True:
-                data = requests.get(i).content
+                data = requests.get(url_list[i]).content
                 if len(data) != 0:
                     with open(f'temp/{ts_filename}', 'wb') as f:
                         f.write(ts_unpack(data))
@@ -95,8 +95,8 @@ def download(url, path, filename):
         pbar.update(1)
     pbar.close()
     with open('temp/temp.txt', 'w+') as f:
-        for i in url_list:
-            ts_filename = i.split('/')[-1]
+        for i in range(len(url_list)):
+            ts_filename = str(i + 1)
             f.write(f'file {ts_filename}\n')
     os.system(
         f'{ffmpeg_path} -f concat -safe 0 -i temp/temp.txt -c copy "{Path(path) / filename}"')
@@ -111,7 +111,7 @@ def search(name):
     page = requests.get(f'https://omofun.tv/vod/search/wd/{name}.html')
     page = etree.HTML(page.text)
     search_xpath_result = page.xpath(
-        '/html/body/div[@class="page list"]/div[@class="main"]/div[@class="content"]/div[@class="module"]/div[@class="module-main module-page"]/div[@class="module-items module-card-items"]/div[@class="module-card-item module-item"]')
+        '//div[@class="module-card-item module-item"]')
     search_result = []
     for i in search_xpath_result:
         animation_name = i.xpath(
@@ -135,7 +135,7 @@ def hot():
     page = requests.get('https://omofun.tv/')
     page = etree.HTML(page.text)
     hot_xpath_result = page.xpath(
-        '/html/body/div[@class="homepage"]/div[@class="main"]/div[@class="content"]/div[@class="module"]/div[@class="module-main scroll-box"]/div[@class="module-items module-poster-items-small scroll-content"]/a[@class="module-poster-item module-item"]')
+        '//div[@class="module-items module-poster-items-small scroll-content"]/a[@class="module-poster-item module-item"]')
     hot_result = []
     for i in hot_xpath_result:
         animation_name = i.xpath('@title')[0]
@@ -156,7 +156,7 @@ def get_download_url(url):
     m3u8_data = requests.get(url, headers=header)
     m3u8_data = etree.HTML(m3u8_data.text)
     m3u8_data = m3u8_data.xpath(
-        '/html/body/div[@class="page player"]/div[@class="main"]/div[@class="content"]/div[@class="module module-player"]/div[@class="module-main"]/div[@class="player-box"]/div[@class="player-box-main"]/script/text()')[0]
+        '//div[@class="player-box-main"]/script/text()')[0]
     m3u8_from = json_match(m3u8_data, 'from')
     m3u8_id = json_match(m3u8_data, 'id')
     m3u8_url = json_match(m3u8_data, 'url')
@@ -233,10 +233,18 @@ if __name__ == '__main__':
                 animation_url = config['animation'][int(command[1]) - 1]['url']
                 r = requests.get(animation_url)
                 html = etree.HTML(r.text)
+                player_name_list = html.xpath(
+                    '//div[@class="module-tab-items-box hisSwiper"]/div/span/text()')
+                if len(player_name_list) > 1:
+                    for i in range(len(player_name_list)):
+                        print(f'{i + 1}.{player_name_list[i]}')
+                    player_select = int(input('选择要使用的播放源:')) - 1
+                else:
+                    player_select = 0
                 episode_name_list = html.xpath(
-                    '//div[@class="module-play-list-content module-play-list-base"]/a[@class="module-play-list-link"]/span/text()')
+                    '//div[@class="module-play-list-content module-play-list-base"]')[player_select].xpath('a[@class="module-play-list-link"]/span/text()')
                 episode_url_list = html.xpath(
-                    '//div[@class="module-play-list-content module-play-list-base"]/a[@class="module-play-list-link"]/@href')
+                    '//div[@class="module-play-list-content module-play-list-base"]')[player_select].xpath('a[@class="module-play-list-link"]/@href')
                 for i in range(len(episode_name_list)):
                     print(f'{i + 1}.{episode_name_list[i]}')
                 episode_select = input('选择要下载的集(A / a为全选,用空格隔开):')
@@ -251,6 +259,8 @@ if __name__ == '__main__':
                 for i in episode_select:
                     url = get_download_url(
                         'https://omofun.tv' + episode_url_list[int(i) - 1])
+                    url = url.replace('///', '/')
+                    url = url.replace('\\', '')
                     if (url == ''):
                         print('没有资源！')
                     else:
