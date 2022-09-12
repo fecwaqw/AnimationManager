@@ -1,5 +1,5 @@
 '''
-AnimationManager v1.2 release
+AnimationManager v1.3 release
 By fecwaqw
 '''
 import re
@@ -101,8 +101,8 @@ def download(url, path, filename):
     os.system(
         f'{ffmpeg_path} -f concat -safe 0 -i temp/temp.txt -c copy "{Path(path) / filename}"')
     os.remove('temp/temp.txt')
-    for i in url_list:
-        ts_filename = i.split('/')[-1]
+    for i in range(len(url_list)):
+        ts_filename = str(i)
         os.remove(f'temp/{ts_filename}')
 
 
