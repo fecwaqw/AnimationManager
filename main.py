@@ -1,5 +1,5 @@
 '''
-AnimationManager v1.3 release
+AnimeManager v1.4 release
 By fecwaqw
 '''
 import re
@@ -14,22 +14,24 @@ import os
 import urllib3
 from tqdm import tqdm
 from pathlib import Path
+from concurrent.futures import ALL_COMPLETED, ThreadPoolExecutor, wait
 
-ffmpeg_path = ''
+max_thrand = 10
 
 
 config = []
+search_list = [[]] * 10
 urllib3.disable_warnings()
 header = {
     'User-Agent': Faker().user_agent()
 }
 welcome_content = '''
-    _          _                 _   _             __  __                                   
-   / \   _ __ (_)_ __ ___   __ _| |_(_) ___  _ __ |  \/  | __ _ _ __   __ _  __ _  ___ _ __ 
-  / _ \ | '_ \| | '_ ` _ \ / _` | __| |/ _ \| '_ \| |\/| |/ _` | '_ \ / _` |/ _` |/ _ \ '__|
- / ___ \| | | | | | | | | | (_| | |_| | (_) | | | | |  | | (_| | | | | (_| | (_| |  __/ |   
-/_/   \_\_| |_|_|_| |_| |_|\__,_|\__|_|\___/|_| |_|_|  |_|\__,_|_| |_|\__,_|\__, |\___|_|   
-                                                                            |___/           
+    _          _                __  __                                   
+   / \   _ __ (_)_ __ ___   ___|  \/  | __ _ _ __   __ _  __ _  ___ _ __ 
+  / _ \ | '_ \| | '_ ` _ \ / _ \ |\/| |/ _` | '_ \ / _` |/ _` |/ _ \ '__|
+ / ___ \| | | | | | | | | |  __/ |  | | (_| | | | | (_| | (_| |  __/ |   
+/_/   \_\_| |_|_|_| |_| |_|\___|_|  |_|\__,_|_| |_|\__,_|\__, |\___|_|   
+                                                         |___/           
 '''
 help_content = '''
 添加番剧:
@@ -43,91 +45,122 @@ help_content = '''
 用浏览器打开番剧页面:
  open <番剧序号> --- opn <番剧序号>
 删除番剧:
- remove / delete <番剧序号> --- rm / del <番剧序号>
+ remove / delete <番剧序号>(多选) --- rm / del <番剧序号>(多选)
 编辑番剧信息:
  edit <番剧序号> <name|url> <修改值> --- ed <番剧序号> <name|url> <修改值>
-设置ffmpeg路径:
- ffmpegpath <路径> --- ffp <路径>
+ffmpeg设置:
+ ffmpegpath [<路径>] --- ffp [<路径>] (不输入路径则显示ffmpeg路径)
 帮助:
  help --- ?
 退出:
  exit / quit --- q
+
+多选可用方法:
+ 1 2 3 多选
+ 1-3   选择范围
+ A/a   全选
+ 可混用(除A/a) eg: 1-3 5 7
 '''
 exit_content = '''
 Bye!
 '''
 
 
-def ts_unpack(data):  # 将ts文件头上的图片伪装去掉
-    last_pos = 0
-    for i in range(len(data)):
-        if data[i] == 71:
-            if i - last_pos == 188:
-                data = data[last_pos:]
-                break
-            last_pos = i
-    return data
-
-
-def download(url, path, filename):
-    m3u8_data = requests.get(url).text
-    m3u8_data = m3u8_data.split('\n')
-    if m3u8_data[-1] == '':
-        m3u8_data.pop(-1)
-    url_list = []
-    for i in m3u8_data:
-        if i[0] != '#':
-            url_list.append(i)
-    try:
-        os.mkdir('temp')
-    except:
-        pass
-    pbar = tqdm(total=len(url_list))
-    for i in range(len(url_list)):
-        ts_filename = str(i + 1)
-        if not os.path.exists(f'temp/{ts_filename}'):
-            while True:
-                data = requests.get(url_list[i]).content
-                if len(data) != 0:
-                    with open(f'temp/{ts_filename}', 'wb') as f:
-                        f.write(ts_unpack(data))
-                    break
-        pbar.update(1)
-    pbar.close()
-    with open('temp/temp.txt', 'w+') as f:
+class Download():
+    def __init__(self, url, path, filename, max_thrand):
+        m3u8_data = requests.get(url).text
+        m3u8_data = m3u8_data.split('\n')
+        if m3u8_data[-1] == '':
+            m3u8_data.pop(-1)
+        url_list = []
+        for i in m3u8_data:
+            if i[0] != '#':
+                url_list.append(i)
+        try:
+            os.mkdir('temp')
+        except:
+            pass
+        pbar = tqdm(total=len(url_list), initial=0, unit=' file',
+                    unit_scale=True, desc=filename, unit_divisor=1)
+        '''
         for i in range(len(url_list)):
             ts_filename = str(i + 1)
-            f.write(f'file {ts_filename}\n')
-    os.system(
-        f'{ffmpeg_path} -f concat -safe 0 -i temp/temp.txt -c copy "{Path(path) / filename}"')
-    os.remove('temp/temp.txt')
-    for i in range(len(url_list)):
-        ts_filename = str(i)
-        os.remove(f'temp/{ts_filename}')
+            if not os.path.exists(f'temp/{ts_filename}'):
+                while True:
+                    data = requests.get(url_list[i]).content
+                    if len(data) != 0:
+                        with open(f'temp/{ts_filename}', 'wb') as f:
+                            f.write(self.ts_unpack(data))
+                        break
+            pbar.update(1)
+        '''
+        pool = ThreadPoolExecutor(max_workers=max_thrand)
+        task = []
+        for i in range(len(url_list)):
+            ts_filename = str(i + 1)
+            task.append(pool.submit(
+                self.download, url_list[i], f'temp/{ts_filename}', pbar))
+        wait(task, return_when=ALL_COMPLETED)
+        pbar.close()
+        with open('temp/temp.txt', 'w+') as f:
+            for i in range(len(url_list)):
+                ts_filename = str(i + 1)
+                f.write(f'file {ts_filename}\n')
+        ffmpeg_path = config['ffmpeg_path']
+        os.system(
+            f'{ffmpeg_path} -f concat -safe 0 -i temp/temp.txt -c copy "{Path(path) / filename}"')
+        os.remove('temp/temp.txt')
+        for i in range(len(url_list)):
+            ts_filename = str(i + 1)
+            os.remove(f'temp/{ts_filename}')
+
+    def download(self, url, path, pbar):
+        if not os.path.exists(path):
+            try:
+                data = requests.get(url)
+                if not (200 <= data.status_code < 400):
+                    print(f'{url}, status_code: {data.status_code}')
+                    raise Exception('Bad request!')
+                with open(path, 'wb') as f:
+                    f.write(self.ts_unpack(data.content))
+            except:
+                self.download(url, path, pbar)
+        pbar.update(1)
+
+    def ts_unpack(self, data):  # 将ts文件头上的图片伪装去掉
+        last_pos = 0
+        for i in range(len(data)):
+            if data[i] == 71:
+                if i - last_pos == 188:
+                    data = data[last_pos:]
+                    break
+                last_pos = i
+        return data
 
 
 def search(name):
     name = quote(name)
-    page = requests.get(f'https://omofun.tv/vod/search/wd/{name}.html')
+    page = requests.get(
+        f'https://omofun.tv/vod/search.html?wd={name}')
     page = etree.HTML(page.text)
     search_xpath_result = page.xpath(
         '//div[@class="module-card-item module-item"]')
     search_result = []
     for i in search_xpath_result:
-        animation_name = i.xpath(
+        anime_name = i.xpath(
             'div[@class="module-card-item-info"]/div[@class="module-card-item-title"]/a/strong/text()')[0]
         temp = i.xpath(
             'div[@class="module-card-item-info"]/div[@class="module-info-item"][1]/div[@class="module-info-item-content"]/text()')
-        animation_year = temp[0]
-        animation_kind = ''
+        anime_year = temp[0]
+        anime_kind = ''
         for j in range(1, len(temp)):
-            animation_kind += temp[j]
-        animation_status = i.xpath(
+            anime_kind += temp[j]
+        anime_status = i.xpath(
             'a[@class="module-card-item-poster"]/div[@class="module-item-cover"]/div[@class="module-item-note"]/text()')[0]
-        animation_url = 'https://omofun.tv/' + \
+        anime_url = 'https://omofun.tv' + \
             i.xpath('a[@class="module-card-item-poster"]/@href')[0]
-        search_result.append({'name': animation_name, 'year': animation_year,
-                             'kind': animation_kind, 'status': animation_status, 'url': animation_url})
+        search_result.append({'name': anime_name, 'year': anime_year,
+                             'kind': anime_kind, 'status': anime_status, 'url': anime_url})
     return search_result
 
 
@@ -138,10 +171,10 @@ def hot():
         '//div[@class="module-items module-poster-items-small scroll-content"]/a[@class="module-poster-item module-item"]')
     hot_result = []
     for i in hot_xpath_result:
-        animation_name = i.xpath('@title')[0]
-        animation_status = i.xpath(
+        anime_name = i.xpath('@title')[0]
+        anime_status = i.xpath(
             'div[@class="module-item-cover"]/div[@class="module-item-note"]/text()')[0]
-        hot_result.append({'name': animation_name, 'status': animation_status})
+        hot_result.append({'name': anime_name, 'status': anime_status})
     return hot_result
 
 
@@ -156,7 +189,7 @@ def get_download_url(url):
     m3u8_data = requests.get(url, headers=header)
     m3u8_data = etree.HTML(m3u8_data.text)
     m3u8_data = m3u8_data.xpath(
-        '/div[@class="player-box-main"]/script/text()')[0]
+        '//div[@class="player-box-main"]/script/text()')[0]
     m3u8_from = json_match(m3u8_data, 'from')
     m3u8_id = json_match(m3u8_data, 'id')
     m3u8_url = json_match(m3u8_data, 'url')
@@ -175,20 +208,46 @@ def get_download_url(url):
 
 
 def save_config(config):
-    config['animation'] = sorted(config['animation'], key=lambda x: x['name'])
+    config['anime'] = sorted(config['anime'], key=lambda x: x['name'])
     json.dump(config, open('config.json', 'w+'))
 
 
+def select_number_parse(lst, length):
+    '''
+    patten1: eg: 1 2 3
+    patten2: eg: 1-3
+    patten3: A/a
+    '''
+    ret = []
+    if lst[0] == 'A' or lst[0] == 'a':
+        return list(range(1, length + 1))
+    for i in lst:
+        result = re.compile('[0-9]+-[0-9]+').findall(i)
+        if result != []:
+            result = re.compile('[0-9]+').findall(i)
+            ret.extend(list(range(int(result[0]), int(result[1]) + 1)))
+            continue
+        result = re.compile('[0-9]+').findall(i)
+        if result != []:
+            ret.append(int(result[0]))
+    return list(set(ret))
+
+
 if __name__ == '__main__':
+    # begin init
+
     try:
         config = json.load(open('config.json', 'r'))
-        ffmpeg_path = config['ffmpeg_path']
+        if 'ffmpeg_path' not in config.keys():
+            raise ValueError
     except:
-        ffmpeg_path = input('请输入你的ffmpeg路径:')
-        config = {'ffmpeg_path': ffmpeg_path, 'animation': []}
+        config = {'ffmpeg_path': input('请输入你的ffmpeg路径:'), 'anime': []}
         save_config(config)
+
     print(welcome_content)
     print('输入"help (?)"以获得帮助')
+
+    # end init
     while True:
         command = input('>>> ').split()
         try:
@@ -197,41 +256,51 @@ if __name__ == '__main__':
             elif command[0] == 'exit' or command[0] == 'quit' or command[0] == 'q':
                 break
             elif command[0] == 'add':
-                animation_name = ''
+                anime_name = ''
                 for i in range(1, len(command)):
-                    animation_name += command[i]
-                search_result = search(animation_name)
+                    anime_name += f'{command[i]} '
+                anime_name = anime_name[:-1]
+                search_result = search(anime_name)
                 for i in range(len(search_result)):
-                    animation_name = search_result[i]['name']
-                    animation_year = search_result[i]['year']
-                    animation_kind = search_result[i]['kind']
-                    animation_status = search_result[i]['status']
+                    anime_name = search_result[i]['name']
+                    anime_year = search_result[i]['year']
+                    anime_kind = search_result[i]['kind']
+                    anime_status = search_result[i]['status']
                     print(
-                        f'{i + 1}.{animation_name} {animation_year} {animation_kind} {animation_status}')
-                select_animation = input('请输入选择的序号(没有需要的番剧则直接回车):')
-                if select_animation == '':
+                        f'{i + 1}.{anime_name} {anime_year} {anime_kind} {anime_status}')
+                select_anime = input(
+                    '请输入选择的序号(没有需要的番剧则直接回车):')
+                if select_anime == '':
                     name = input('请输入番剧全名(若输入本是全名则直接回车):')
                     if name != '':
-                        animation_name = name
-                    animation_url = input('请输入番剧网址:')
+                        anime_name = name
+                    anime_url = input('请输入番剧网址:')
+                    config['anime'].append(
+                        {'name': anime_name, 'url': anime_url})
                 else:
-                    select_animation = int(select_animation) - 1
-                    animation_name = search_result[select_animation]['name']
-                    animation_url = search_result[select_animation]['url']
-                config['animation'].append(
-                    {'name': animation_name, 'url': animation_url})
+                    select_anime = select_anime.split()
+                    select_anime = select_number_parse(
+                        select_anime, len(search_result))
+                    if len(select_anime) > len(search_result):
+                        raise IndexError
+                    for i in select_anime:
+                        i = int(i) - 1
+                        anime_name = search_result[i]['name']
+                        anime_url = search_result[i]['url']
+                        config['anime'].append(
+                            {'name': anime_name, 'url': anime_url})
                 save_config(config)
             elif command[0] == 'hot':
                 hot_result = hot()
                 for i in hot_result:
-                    animation_name = i['name']
-                    animation_status = i['status']
-                    print(f'{animation_name} {animation_status}')
+                    anime_name = i['name']
+                    anime_status = i['status']
+                    print(f'{anime_name} {anime_status}')
             elif command[0] == 'get':
-                animation_name = config['animation'][int(
+                anime_name = config['anime'][int(
                     command[1]) - 1]['name']
-                animation_url = config['animation'][int(command[1]) - 1]['url']
-                r = requests.get(animation_url)
+                anime_url = config['anime'][int(command[1]) - 1]['url']
+                r = requests.get(anime_url)
                 html = etree.HTML(r.text)
                 player_name_list = html.xpath(
                     '//div[@class="module-tab-items-box hisSwiper"]/div/span/text()')
@@ -253,7 +322,7 @@ if __name__ == '__main__':
                 else:
                     episode_select = episode_select.split()
                 try:
-                    os.mkdir(animation_name)
+                    os.mkdir(anime_name)
                 except:
                     pass
                 for i in episode_select:
@@ -262,39 +331,51 @@ if __name__ == '__main__':
                     url = url.replace('///', '/')
                     url = url.replace('\\', '')
                     if (url == ''):
-                        print('没有资源！')
+                        print('没有资源!')
                     else:
-                        download(url, animation_name,
-                                 episode_name_list[int(i) - 1] + '.mp4')
+                        Download(url, anime_name,
+                                 episode_name_list[int(i) - 1] + '.mp4', max_thrand)
             elif command[0] == 'list' or command[0] == 'ls':
-                for i in range(len(config['animation'])):
-                    animation_name = config['animation'][i]['name']
-                    animation_url = config['animation'][i]['url']
+                for i in range(len(config['anime'])):
+                    anime_name = config['anime'][i]['name']
+                    anime_url = config['anime'][i]['url']
                     print(
-                        f'{i + 1}.{animation_name} {animation_url}')
+                        f'{i + 1}.{anime_name} {anime_url}')
             elif command[0] == 'remove' or command[0] == 'rm' or command[0] == 'delete' or command[0] == 'del':
-                config['animation'].pop(int(command[1]) - 1)
+                select_anime = select_number_parse(
+                    command[1:], len(config['anime']))
+                for i in select_anime:
+                    config['anime'][i - 1]['url'] = False
+                config['anime'] = [
+                    x for x in config['anime'] if x['url'] != False]
                 save_config(config)
             elif command[0] == 'open' or command[0] == 'opn':
                 webbrowser.open_new_tab(
-                    config['animation'][int(command[1]) - 1]['url'])
+                    config['anime'][int(command[1]) - 1]['url'])
             elif command[0] == 'edit' or command[0] == 'ed':
                 if command[2] == 'name':
-                    config['animation'][int(
+                    config['anime'][int(
                         command[1]) - 1]['name'] = command[3]
                 elif command[2] == 'url':
-                    config['animation'][int(
+                    config['anime'][int(
                         command[1]) - 1]['url'] = command[3]
                 save_config(config)
+            elif command[0] == 'find' or command[0] == 'fnd':
+                anime_name = ''
+                for i in range(1, len(command)):
+                    anime_name += f' command[i]'
+                search_result = search(anime_name)
             elif command[0] == 'ffmpegpath' or command[0] == 'ffp':
                 path = ''
                 for i in range(1, len(command)):
                     path += command[i]
-                config['ffmpeg_path'] = ffmpeg_path
-                save_config(config)
-                ffmpeg_path = path
+                if path == '':
+                    print(config['ffmpeg_path'])
+                else:
+                    config['ffmpeg_path'] = path
+                    save_config(config)
             else:
                 raise NameError
         except:
-            print('错误！')
+            print('错误!')
     print(exit_content)
